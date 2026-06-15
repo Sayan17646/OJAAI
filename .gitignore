@@ -38,6 +38,7 @@ data/lab_reports/
 *.log
 logs/
 *.txt
+!requirements.txt
 
 # Chrome DevTools profiles
 chrome_dev_profile/
