@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. M. Lee clinic_name: Oakview Hospital clinic_address: 45 Oak Ave. patient_name: Aisha Khan patient_age: 52 date: 2024-12-16 medications: - Prednisone 500 mg - At bedtime - Losartan 250 mg - After meals - Gabapentin 5 mg - As needed for pain signature: Dr. M. Lee </s>"
+}

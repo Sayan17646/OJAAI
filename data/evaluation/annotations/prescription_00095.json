@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. F. Gomez clinic_name: City Health Clinic clinic_address: 789 Pine Rd. patient_name: Hiro Tanaka patient_age: 47 date: 2024-12-16 medications: - Levothyroxine 250 mg - After meals - Ciprofloxacin 250 mg - As needed for pain - Losartan 10 mg - As directed - Ibuprofen 500 mg - At bedtime signature: Dr. F. Gomez </s>"
+}

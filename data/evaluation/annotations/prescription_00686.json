@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. C. Rossi clinic_name: Greenwood Medical Center clinic_address: 234 Maple Blvd. patient_name: Fatima Ali patient_age: 37 date: 2024-12-16 medications: - Atorvastatin 500 mg - After meals - Lisinopril 250 mg - Before meals signature: Dr. C. Rossi </s>"
+}

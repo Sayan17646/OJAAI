@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: Meadowview Health clinic_address: 789 Pine Rd. patient_name: Carlos Chavez patient_age: 35 date: 2024-12-16 medications: - Ciprofloxacin 500 mg - Every 8 hours - Lisinopril 500 mg - Take twice daily - Amlodipine 20 mg - After meals - Omeprazole 10 mg - After meals signature: Dr. R. Patel </s>"
+}

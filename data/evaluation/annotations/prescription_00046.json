@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. M. Lee clinic_name: Greenwood Medical Center clinic_address: 789 Pine Rd. patient_name: Maria Garcia patient_age: 20 date: 2024-12-16 medications: - Ciprofloxacin 25 mg - With food - Hydrochlorothiazide 20 mg - As directed signature: Dr. M. Lee </s>"
+}

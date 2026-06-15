@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: Greenwood Medical Center clinic_address: 678 Orchard Ln. patient_name: Carlos Chavez patient_age: 33 date: 2024-12-16 medications: - Prednisone 500 mg - Take twice daily signature: Dr. R. Patel </s>"
+}

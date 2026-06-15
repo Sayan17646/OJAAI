@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: Riverside Clinic clinic_address: 789 Pine Rd. patient_name: John Doe patient_age: 38 date: 2024-12-16 medications: - Lisinopril 50 mg - At bedtime - Acetaminophen 100 mg - With food - Omeprazole 25 mg - At bedtime - Levothyroxine 5 mg - Before meals signature: Dr. R. Patel </s>"
+}

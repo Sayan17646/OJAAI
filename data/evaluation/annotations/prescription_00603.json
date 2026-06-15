@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: City Health Clinic clinic_address: 45 Oak Ave. patient_name: Maria Garcia patient_age: 55 date: 2024-12-16 medications: - Losartan 20 mg - At bedtime signature: Dr. R. Patel </s>"
+}

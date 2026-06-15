@@ -1,0 +1,63 @@
+{
+    "dataset_size": 1,
+    "ocr": {
+        "avg_latency": 49.42172169685364,
+        "medication": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        "clinical_fields": {
+            "doctor_name": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            },
+            "doctor_reg": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            },
+            "patient_name": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            },
+            "patient_age": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            },
+            "prescription_date": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            }
+        }
+    },
+    "donut": {
+        "avg_latency": 43.547629594802856,
+        "medication": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+        },
+        "clinical_fields": {
+            "doctor_name": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            },
+            "doctor_reg": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            },
+            "patient_name": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            },
+            "patient_age": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            },
+            "prescription_date": {
+                "strict": 0.0,
+                "fuzzy": 0.0
+            }
+        }
+    }
+}

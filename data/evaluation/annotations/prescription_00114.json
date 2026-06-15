@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: Riverside Clinic clinic_address: 789 Pine Rd. patient_name: Aisha Khan patient_age: 43 date: 2024-12-16 medications: - Ciprofloxacin 5 mg - Before meals signature: Dr. R. Patel </s>"
+}

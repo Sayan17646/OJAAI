@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: ojaai-service
+    runtime: docker
+    plan: free
+    envVars:
+      - key: CONFIDENCE_THRESHOLD
+        value: "0.5"
+      - key: API_KEY
+        value: secure-ojaai-rot-5678-auth
+      - key: DATABASE_URL
+        sync: false
+        placeholder: "Enter Neon/Supabase PostgreSQL connection string (postgresql://...)"
+      - key: GEMINI_API_KEY
+        sync: false
+        placeholder: "Enter Gemini API Key (optional, defaults to local OCR fallback)"
+      - key: SECRET_KEY
+        sync: false
+        placeholder: "Enter a random secure secret key for clinician session signing"
+      - key: MAX_ACTIVE_MED_DAYS
+        value: "90"
+      - key: LOG_LEVEL
+        value: "INFO"
+

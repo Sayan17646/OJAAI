@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. H. Johnson clinic_name: Oakview Hospital clinic_address: 678 Orchard Ln. patient_name: Fatima Ali patient_age: 22 date: 2024-12-16 medications: - Metformin 250 mg - As directed signature: Dr. H. Johnson </s>"
+}

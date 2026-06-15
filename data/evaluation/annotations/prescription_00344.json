@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: Meadowview Health clinic_address: 234 Maple Blvd. patient_name: Fatima Ali patient_age: 40 date: 2024-12-16 medications: - Ibuprofen 25 mg - Every 12 hours - Prednisone 250 mg - Every 12 hours - Gabapentin 20 mg - At bedtime signature: Dr. R. Patel </s>"
+}

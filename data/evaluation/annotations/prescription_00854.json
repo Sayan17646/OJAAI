@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. F. Gomez clinic_name: Meadowview Health clinic_address: 234 Maple Blvd. patient_name: Carlos Chavez patient_age: 24 date: 2024-12-16 medications: - Hydrochlorothiazide 5 mg - Take once daily - Ibuprofen 100 mg - Before meals signature: Dr. F. Gomez </s>"
+}

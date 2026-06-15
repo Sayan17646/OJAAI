@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. H. Johnson clinic_name: City Health Clinic clinic_address: 678 Orchard Ln. patient_name: Carlos Chavez patient_age: 34 date: 2024-12-16 medications: - Gabapentin 10 mg - After meals signature: Dr. H. Johnson </s>"
+}

@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: Greenwood Medical Center clinic_address: 123 Main St. patient_name: Wei Li patient_age: 73 date: 2024-12-16 medications: - Amlodipine 500 mg - Before meals signature: Dr. R. Patel </s>"
+}

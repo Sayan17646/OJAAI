@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. H. Johnson clinic_name: City Health Clinic clinic_address: 45 Oak Ave. patient_name: John Doe patient_age: 47 date: 2024-12-16 medications: - Hydrochlorothiazide 250 mg - Before meals - Losartan 500 mg - After meals - Levothyroxine 25 mg - At bedtime signature: Dr. H. Johnson </s>"
+}

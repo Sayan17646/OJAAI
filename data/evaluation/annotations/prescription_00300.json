@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. F. Gomez clinic_name: City Health Clinic clinic_address: 789 Pine Rd. patient_name: John Doe patient_age: 67 date: 2024-12-16 medications: - Simvastatin 20 mg - Take once daily - Gabapentin 50 mg - At bedtime - Atorvastatin 50 mg - After meals - Omeprazole 25 mg - After meals signature: Dr. F. Gomez </s>"
+}

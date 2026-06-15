@@ -1,0 +1,62 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Real patient data — NEVER commit
+data/prescriptions/*.jpg
+data/prescriptions/*.jpeg
+data/prescriptions/*.png
+data/prescriptions/*.pdf
+data/lab_reports/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+*.txt
+
+# Chrome DevTools profiles
+chrome_dev_profile/
+
+# Large ML models and weights
+models/
+
+
+# Archives & Scripts
+*.zip
+*.bat
+check_*.py
+dump_*.py
+list_*.py
+search_*.py
+smoke_*.py
+verify_*.py
+sync_*.py
+test_*.py
+*tempmediaStorage/
+*system_generated/
+

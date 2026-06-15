@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. C. Rossi clinic_name: Greenwood Medical Center clinic_address: 678 Orchard Ln. patient_name: Wei Li patient_age: 55 date: 2024-12-16 medications: - Acetaminophen 25 mg - As directed - Ciprofloxacin 100 mg - Every 8 hours signature: Dr. C. Rossi </s>"
+}

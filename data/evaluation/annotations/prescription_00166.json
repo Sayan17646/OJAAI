@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. C. Rossi clinic_name: Riverside Clinic clinic_address: 678 Orchard Ln. patient_name: Hiro Tanaka patient_age: 31 date: 2024-12-16 medications: - Levothyroxine 10 mg - Before meals signature: Dr. C. Rossi </s>"
+}

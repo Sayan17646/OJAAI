@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. H. Johnson clinic_name: Riverside Clinic clinic_address: 123 Main St. patient_name: Michael Brown patient_age: 29 date: 2024-12-16 medications: - Simvastatin 10 mg - Every 8 hours - Lisinopril 50 mg - Every 8 hours signature: Dr. H. Johnson </s>"
+}

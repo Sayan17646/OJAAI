@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. H. Johnson clinic_name: Oakview Hospital clinic_address: 45 Oak Ave. patient_name: Michael Brown patient_age: 56 date: 2024-12-16 medications: - Amlodipine 50 mg - As needed for pain - Acetaminophen 25 mg - As needed for pain - Levothyroxine 10 mg - As directed signature: Dr. H. Johnson </s>"
+}

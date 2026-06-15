@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. H. Johnson clinic_name: Riverside Clinic clinic_address: 789 Pine Rd. patient_name: Jane Smith patient_age: 36 date: 2024-12-16 medications: - Metformin 50 mg - Every 8 hours - Simvastatin 5 mg - With food signature: Dr. H. Johnson </s>"
+}

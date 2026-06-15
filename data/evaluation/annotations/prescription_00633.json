@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: City Health Clinic clinic_address: 45 Oak Ave. patient_name: Carlos Chavez patient_age: 77 date: 2024-12-16 medications: - Gabapentin 100 mg - Before meals - Ciprofloxacin 50 mg - Take twice daily signature: Dr. R. Patel </s>"
+}

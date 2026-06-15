@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. A. Smith clinic_name: Meadowview Health clinic_address: 789 Pine Rd. patient_name: Aisha Khan patient_age: 67 date: 2024-12-16 medications: - Omeprazole 10 mg - Take once daily signature: Dr. A. Smith </s>"
+}

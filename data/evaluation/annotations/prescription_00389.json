@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. F. Gomez clinic_name: Riverside Clinic clinic_address: 123 Main St. patient_name: Maria Garcia patient_age: 39 date: 2024-12-16 medications: - Simvastatin 100 mg - As directed - Hydrochlorothiazide 5 mg - Every 12 hours - Prednisone 10 mg - As directed signature: Dr. F. Gomez </s>"
+}

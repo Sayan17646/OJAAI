@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. H. Johnson clinic_name: Greenwood Medical Center clinic_address: 123 Main St. patient_name: Elena Petrova patient_age: 63 date: 2024-12-16 medications: - Losartan 250 mg - Every 8 hours - Lisinopril 20 mg - Before meals - Metformin 5 mg - Before meals signature: Dr. H. Johnson </s>"
+}

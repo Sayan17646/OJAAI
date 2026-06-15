@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. A. Smith clinic_name: Meadowview Health clinic_address: 789 Pine Rd. patient_name: John Doe patient_age: 42 date: 2024-12-16 medications: - Acetaminophen 5 mg - At bedtime - Omeprazole 10 mg - Take twice daily - Ibuprofen 50 mg - Every 12 hours - Losartan 10 mg - As needed for pain signature: Dr. A. Smith </s>"
+}

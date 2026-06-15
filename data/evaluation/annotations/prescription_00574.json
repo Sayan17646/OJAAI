@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. A. Smith clinic_name: Meadowview Health clinic_address: 678 Orchard Ln. patient_name: John Doe patient_age: 33 date: 2024-12-16 medications: - Acetaminophen 5 mg - After meals - Gabapentin 250 mg - As needed for pain - Levothyroxine 100 mg - Every 8 hours signature: Dr. A. Smith </s>"
+}

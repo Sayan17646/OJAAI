@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. A. Smith clinic_name: Greenwood Medical Center clinic_address: 45 Oak Ave. patient_name: Michael Brown patient_age: 49 date: 2024-12-16 medications: - Lisinopril 50 mg - Every 8 hours - Amlodipine 250 mg - Every 8 hours - Atorvastatin 50 mg - At bedtime - Amoxicillin 500 mg - Take once daily signature: Dr. A. Smith </s>"
+}

@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. C. Rossi clinic_name: Greenwood Medical Center clinic_address: 789 Pine Rd. patient_name: John Doe patient_age: 27 date: 2024-12-16 medications: - Atorvastatin 5 mg - Every 12 hours - Ibuprofen 25 mg - Before meals - Amoxicillin 500 mg - Take twice daily - Lisinopril 250 mg - Take twice daily signature: Dr. C. Rossi </s>"
+}

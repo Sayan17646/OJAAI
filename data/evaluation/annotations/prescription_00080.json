@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. M. Lee clinic_name: Riverside Clinic clinic_address: 234 Maple Blvd. patient_name: Elena Petrova patient_age: 62 date: 2024-12-16 medications: - Lisinopril 10 mg - Take twice daily - Levothyroxine 100 mg - Take twice daily - Losartan 25 mg - Every 8 hours - Metformin 10 mg - At bedtime signature: Dr. M. Lee </s>"
+}

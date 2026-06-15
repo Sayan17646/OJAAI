@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. M. Lee clinic_name: Greenwood Medical Center clinic_address: 789 Pine Rd. patient_name: Michael Brown patient_age: 42 date: 2024-12-16 medications: - Lisinopril 20 mg - Every 8 hours - Amoxicillin 10 mg - As directed signature: Dr. M. Lee </s>"
+}

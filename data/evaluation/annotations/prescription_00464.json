@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. H. Johnson clinic_name: Riverside Clinic clinic_address: 45 Oak Ave. patient_name: Elena Petrova patient_age: 30 date: 2024-12-16 medications: - Levothyroxine 500 mg - Every 8 hours - Hydrochlorothiazide 100 mg - As needed for pain signature: Dr. H. Johnson </s>"
+}

@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. F. Gomez clinic_name: Riverside Clinic clinic_address: 234 Maple Blvd. patient_name: Michael Brown patient_age: 55 date: 2024-12-16 medications: - Metformin 5 mg - As directed signature: Dr. F. Gomez </s>"
+}

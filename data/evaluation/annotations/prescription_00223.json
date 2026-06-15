@@ -1,0 +1,3 @@
+{
+    "ground_truth": "<s_ocr> doctor_name: Dr. C. Rossi clinic_name: City Health Clinic clinic_address: 123 Main St. patient_name: Jane Smith patient_age: 66 date: 2024-12-16 medications: - Levothyroxine 500 mg - Every 12 hours - Ciprofloxacin 500 mg - As directed signature: Dr. C. Rossi </s>"
+}
