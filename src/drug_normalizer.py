@@ -1,13 +1,16 @@
 """
 drug_normalizer.py — Drug name normalisation for OJAAI.
 
-Pipeline per TRD Section 3:
+Pipeline (Phase 2 upgrade):
   1. Lowercase + strip
-  2. Check INDIA_BRAND_MAP (local dict, instant, India-first)
+  2. brand_db.lookup_brand() — SQLite + Levenshtein fuzzy match (India-first)
+     - Pass 1: exact match (O(1) indexed)
+     - Pass 2: fuzzy match (edit distance ≤ 2) — recovers OCR typos
   3. Query RxNorm API (NIH, free, ~200ms)
   4. Degrade gracefully on RxNorm failure
 
-INDIA_BRAND_MAP is a plain Python dict — do NOT move to DB in Phase 1.
+INDIA_BRAND_MAP is the source-of-truth dict used to seed the SQLite DB.
+The DB is auto-built at ./data/brand_dict.db on first startup.
 RxNorm lookups are cached with @lru_cache.
 All HTTP calls have timeout=5.
 
@@ -27,6 +30,7 @@ from typing import List, Optional
 
 import requests
 
+from src.brand_db import lookup_brand
 from src.models import MedicationExtracted, NormalizedDrug
 
 logger = logging.getLogger(__name__)
@@ -506,14 +510,17 @@ def normalize_drug(med: MedicationExtracted) -> NormalizedDrug:
     """
     cleaned = _clean_name(med.raw_drug_name)
 
-    # Step 1: Check INDIA_BRAND_MAP
-    inn = INDIA_BRAND_MAP.get(cleaned)
+    # Step 1: brand_db two-pass lookup (exact → Levenshtein fuzzy)
+    # Pass 1: exact match against SQLite brand_names table (indexed, O(1))
+    # Pass 2: fuzzy match with edit distance ≤ 2 — recovers OCR typos
+    inn = lookup_brand(cleaned)
     if inn is None:
         # Try partial match on first word (e.g. "Glycomet SR 500" → "glycomet sr" → "glycomet")
         first_word = cleaned.split()[0] if cleaned else cleaned
-        inn = INDIA_BRAND_MAP.get(first_word)
+        if first_word != cleaned:
+            inn = lookup_brand(first_word)
     if inn is None:
-        inn = cleaned  # worst-case fallback
+        inn = cleaned  # worst-case fallback — let RxNorm try
 
     # Step 2: RxNorm lookup
     rxcui, standard_name = _rxnorm_lookup(inn)

@@ -9,16 +9,17 @@ TWO SEPARATE PIPELINES:
   preprocess_for_gemini()    — light touch: EXIF rotation, mild sharpening, resize.
                                Returns JPEG bytes preserving colour for Gemini Vision.
 
-Processing order for Tesseract (per TRD Section 1 + Priority-1 upgrade):
+Processing order for Tesseract (Phase 2 mobile-optimized pipeline):
   1. Grayscale conversion
-  2. CLAHE (Contrast Limited Adaptive Histogram Equalisation)
-  3. Dark-background inversion
-  4. Deskew (only if angle > 0.5°)
-  5. Perspective correction (document boundary detection)
-  6. Denoising
-  7. Adaptive thresholding
-  8. Morphological cleanup
-  9. Upscale if width < 1000px
+  2. Background shadow removal (morphological background estimation)
+  3. CLAHE (clipLimit=3.5 — stronger for uneven phone lighting)
+  4. Dark-background inversion
+  5. Deskew (only if angle > 0.5°)
+  6. Perspective correction (document boundary detection)
+  7. Denoising
+  8. Adaptive thresholding (+ Otsu fallback for near-blank results)
+  9. Morphological cleanup
+  10. Upscale if width < 1000px
 
 Processing order for Gemini:
   1. EXIF / orientation correction (phone photos)
@@ -92,34 +93,41 @@ def preprocess_for_tesseract(img_bgr: np.ndarray) -> np.ndarray:
     Full heavy-cleaning pipeline for Tesseract OCR.
     Returns a binary (thresholded) grayscale uint8 numpy array.
 
-    Improvements over original preprocess():
-      - CLAHE replaces simple brightness inversion for better local contrast
-      - Perspective correction straightens phone-camera angles
+    Phase 2 mobile-optimized improvements:
+      - Background shadow removal before CLAHE (removes lighting gradients)
+      - Stronger CLAHE (clipLimit=3.5) for phone camera photos
+      - Otsu fallback if adaptive threshold produces near-blank result
     """
     # Step 1: Grayscale
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
-    # Step 2: CLAHE — Contrast Limited Adaptive Histogram Equalisation
-    # Much better than a global brightness check for uneven lighting from phones.
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    # Step 2: Background shadow removal
+    # Estimate background illumination using a large morphological dilation.
+    # Subtracting it removes uneven lighting gradients from phone camera shadows
+    # and paper folds, equalising local contrast before CLAHE.
+    gray = _remove_shadow(gray)
+
+    # Step 3: CLAHE — Contrast Limited Adaptive Histogram Equalisation
+    # clipLimit=3.5 (up from 2.0) is stronger for unevenly-lit phone photos.
+    clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(8, 8))
     gray = clahe.apply(gray)
 
-    # Step 3: Dark background detection → invert so text is dark on white
+    # Step 4: Dark background detection → invert so text is dark on white
     mean_brightness = float(np.mean(gray))
     if mean_brightness < 127:
         logger.debug("Dark background detected — inverting image.")
         gray = cv2.bitwise_not(gray)
 
-    # Step 4: Deskew (only if tilt > 0.5°)
+    # Step 5: Deskew (only if tilt > 0.5°)
     gray = _deskew(gray)
 
-    # Step 5: Perspective correction — straighten document from phone angles
+    # Step 6: Perspective correction — straighten document from phone angles
     gray = _perspective_correct(gray)
 
-    # Step 6: Denoise
+    # Step 7: Denoise
     gray = cv2.fastNlMeansDenoising(gray, h=10)
 
-    # Step 7: Adaptive thresholding
+    # Step 8: Adaptive thresholding (primary)
     thresh = cv2.adaptiveThreshold(
         gray,
         maxValue=255,
@@ -129,11 +137,22 @@ def preprocess_for_tesseract(img_bgr: np.ndarray) -> np.ndarray:
         C=2,
     )
 
-    # Step 8: Morphological cleanup — close tiny noise holes
+    # Step 8b: Otsu fallback — if adaptive thresh produced a near-blank image
+    # (< 5% dark pixels), it likely failed on a very uniform low-contrast scan.
+    # Otsu's global threshold handles these cases better.
+    dark_pixel_ratio = float(np.sum(thresh == 0)) / thresh.size
+    if dark_pixel_ratio < 0.05:
+        logger.debug(
+            "Adaptive threshold near-blank (%.1f%% dark) — switching to Otsu fallback.",
+            dark_pixel_ratio * 100,
+        )
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    # Step 9: Morphological cleanup — close tiny noise holes
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
     cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-    # Step 9: Upscale if narrower than 1000px
+    # Step 10: Upscale if narrower than 1000px
     h, w = cleaned.shape
     if w < 1000:
         scale = 1000.0 / w
@@ -214,6 +233,33 @@ def preprocess_for_gemini(image_bytes: bytes, filename: str) -> bytes:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _remove_shadow(gray: np.ndarray) -> np.ndarray:
+    """
+    Remove uneven lighting / shadows from phone camera photos.
+
+    Strategy: estimate the background illumination by applying a very large
+    morphological dilation (which keeps only the bright background, not ink).
+    Subtracting the estimated background from the image normalises local
+    contrast and removes gradients from shadows, folds, and uneven room light.
+
+    The kernel size (kernel_size) is set to 1/15th of the image width,
+    clamped to [31, 91] px to avoid being too aggressive on small images.
+    """
+    h, w = gray.shape
+    # Kernel size: odd, proportional to image width, within [31, 91]
+    k = max(31, min(91, (w // 15) | 1))  # bitwise OR 1 ensures odd number
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
+
+    # Dilate to get background estimate (ink pixels get "filled in" by neighbours)
+    bg = cv2.dilate(gray, kernel)
+
+    # Subtract background and re-center around 127
+    # cv2.subtract clips at 0, so we use numpy with offset
+    norm = cv2.subtract(bg, gray)  # inverted: bright background, dark text
+    norm = cv2.normalize(norm, None, 0, 255, cv2.NORM_MINMAX)
+    return norm
+
 
 def _deskew(gray: np.ndarray) -> np.ndarray:
     """

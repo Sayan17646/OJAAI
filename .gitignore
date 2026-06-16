@@ -29,6 +29,9 @@ data/prescriptions/*.png
 data/prescriptions/*.pdf
 data/lab_reports/
 
+# Auto-generated brand dictionary (rebuilt from INDIA_BRAND_MAP at runtime)
+data/brand_dict.db
+
 # IDE
 .vscode/
 .idea/
@@ -58,6 +61,7 @@ smoke_*.py
 verify_*.py
 sync_*.py
 test_*.py
+# Allow unit tests in the tests/ package (negation of the test_*.py rule above)
+!tests/test_*.py
 *tempmediaStorage/
 *system_generated/
-
