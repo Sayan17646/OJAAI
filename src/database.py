@@ -4,10 +4,16 @@ database.py — SQLAlchemy ORM models and session management for OJAAI.
 Tables (per TRD architecture):
   patients, prescriptions, medications, drug_interactions, review_queue
 
+PHG MVP additions (7 new tables, see PHG MVP spec):
+  doctors, medication_episodes, medication_dosage_history,
+  patient_conditions, drug_condition_signals, phg_events,
+  patient_drug_reactions
+
 Rules:
   - Never store image blobs — filepath only.
   - Low-confidence records go to review_queue, NOT main tables.
   - raw_ocr_text stored for audit but never logged at INFO level.
+  - PHG writes are inside the same transaction as prescription writes.
 """
 
 from __future__ import annotations
@@ -20,9 +26,11 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from sqlalchemy import (
     Boolean, Column, Date, DateTime, Float, ForeignKey,
-    Integer, String, Text, Table, create_engine, func, text,
+    Integer, SmallInteger, String, Text, Table,
+    CheckConstraint, Index, UniqueConstraint,
+    create_engine, func, text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB, ARRAY
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
 load_dotenv()
@@ -241,6 +249,262 @@ class ClinicalSafetyRule(Base):
 
 # ---------------------------------------------------------------------------
 
+
+# ===========================================================================
+# PHG MVP ORM Models — Patient History Graph (7 new tables)
+# All additive. No existing models modified.
+# ===========================================================================
+
+class Doctor(Base):
+    """
+    Normalized prescribing doctor registry.
+    Deduplication via registration_number_normalized (strip non-alphanumeric, uppercase).
+    """
+    __tablename__ = "doctors"
+
+    id                              = Column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    registration_number             = Column(String(100), nullable=True)
+    registration_number_normalized  = Column(String(50),  nullable=True, index=True)  # unique enforced via DDL index
+    name                            = Column(Text,         nullable=True)
+    speciality                      = Column(Text,         nullable=True)
+    speciality_group                = Column(String(30),   nullable=True)  # 'metabolic'|'cardiovascular'|etc.
+    clinic_name                     = Column(Text,         nullable=True)
+    facility_id                     = Column(PG_UUID(as_uuid=True), ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True)
+    raw_name_variants               = Column(JSONB, nullable=False, server_default="'[]'")
+    first_seen_at                   = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at                      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    medication_episodes = relationship("MedicationEpisode", back_populates="latest_doctor", foreign_keys="MedicationEpisode.latest_doctor_id")
+
+
+class MedicationEpisode(Base):
+    """
+    Longitudinal medication episode: one continuous treatment period per patient per drug.
+    Partial unique index (enforced via DDL) prevents two active episodes for same patient+INN.
+    """
+    __tablename__ = "medication_episodes"
+
+    id                  = Column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    patient_id          = Column(PG_UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False, index=True)
+    inn                 = Column(Text, nullable=False)
+    rxcui               = Column(String(20), nullable=True)
+    drug_class          = Column(String(50), nullable=True)
+
+    # FDC support — fdc_components stores the exploded component INNs for safety lookup
+    is_fdc              = Column(Boolean, nullable=False, server_default="false")
+    fdc_components      = Column(ARRAY(Text), nullable=True)  # ['metformin', 'glibenclamide']
+
+    # Dispensing behavior — drives episode boundary logic
+    dispensing_type     = Column(String(20), nullable=False, server_default="'scheduled'")
+    # 'scheduled' | 'acute' | 'prn' | 'periodic'
+
+    status              = Column(String(20), nullable=False, server_default="'active'")
+    # 'active' | 'completed' | 'discontinued' | 'prn_snapshot' | 'unknown'
+
+    start_date          = Column(Date, nullable=False)
+    estimated_end_date  = Column(Date, nullable=True)
+    actual_end_date     = Column(Date, nullable=True)
+    gap_tolerance_days  = Column(Integer, nullable=False, server_default="45")
+    prescription_count  = Column(Integer, nullable=False, server_default="1")
+    total_duration_days = Column(Integer, nullable=True)
+
+    # Denormalized latest snapshot — avoids join on hot read path
+    latest_dosage_value     = Column(Float,       nullable=True)
+    latest_dosage_unit      = Column(Text,        nullable=True)
+    latest_frequency        = Column(Text,        nullable=True)
+    latest_doctor_id        = Column(PG_UUID(as_uuid=True), ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True)
+    latest_prescription_id  = Column(PG_UUID(as_uuid=True), ForeignKey("prescriptions.id", ondelete="SET NULL"), nullable=True)
+
+    # Optimistic locking version counter — increment on every UPDATE
+    version             = Column(Integer, nullable=False, server_default="1")
+
+    created_at          = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    patient             = relationship("Patient", foreign_keys=[patient_id])
+    latest_doctor       = relationship("Doctor", back_populates="medication_episodes", foreign_keys=[latest_doctor_id])
+    dosage_history      = relationship(
+        "MedicationDosageHistory",
+        primaryjoin="MedicationEpisode.id == foreign(MedicationDosageHistory.episode_id)",
+        back_populates="episode",
+        order_by="MedicationDosageHistory.recorded_date.desc()",
+        lazy="dynamic",
+    )
+
+
+class MedicationDosageHistory(Base):
+    """
+    Append-only audit trail: one row per prescription × drug.
+    episode_id FK is app-enforced (no REFERENCES constraint) to allow future partitioning.
+    """
+    __tablename__ = "medication_dosage_history"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    episode_id      = Column(PG_UUID(as_uuid=True), nullable=False, index=True)  # app-enforced FK
+    prescription_id = Column(PG_UUID(as_uuid=True), ForeignKey("prescriptions.id", ondelete="RESTRICT"), nullable=False)
+    doctor_id       = Column(PG_UUID(as_uuid=True), ForeignKey("doctors.id",        ondelete="SET NULL"),  nullable=True)
+
+    raw_drug_name   = Column(Text,        nullable=False)
+    dosage_value    = Column(Float,       nullable=True)
+    dosage_unit     = Column(Text,        nullable=True)
+    frequency       = Column(Text,        nullable=True)
+    freq_per_day    = Column(Float,       nullable=True)
+    duration_days   = Column(Integer,     nullable=True)
+    route           = Column(Text,        nullable=True)
+
+    # Outcome tracking fields — zero cost now, critical for Phase 3
+    stop_reason     = Column(Text,        nullable=True)  # 'treatment_complete'|'adverse_reaction'|'switched_to'|'patient_request'
+    switched_to_inn = Column(Text,        nullable=True)  # populated when stop_reason='switched_to'
+    refill_number   = Column(Integer,     nullable=False, server_default="1")
+
+    # Deduplication — prevents double-write on upload retry
+    # Value: sha256(prescription_id + '::' + inn)
+    idempotency_key = Column(Text,        nullable=True, unique=True)
+
+    recorded_date   = Column(Date,        nullable=False)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+    episode         = relationship(
+        "MedicationEpisode",
+        primaryjoin="foreign(MedicationDosageHistory.episode_id) == MedicationEpisode.id",
+        back_populates="dosage_history",
+    )
+
+
+class PatientCondition(Base):
+    """
+    Inferred clinical condition. Never directly entered.
+    Partial unique index (enforced via DDL) allows condition recurrence across episodes.
+    """
+    __tablename__ = "patient_conditions"
+
+    id              = Column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    patient_id      = Column(PG_UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    condition_code  = Column(String(20), nullable=False)
+    condition_name  = Column(Text,       nullable=False)
+    condition_group = Column(Text,       nullable=True)
+
+    # episode_number enables condition recurrence without destroying history
+    episode_number  = Column(Integer, nullable=False, server_default="1")
+
+    status          = Column(String(20), nullable=False, server_default="'probable'")
+    # 'probable' | 'confirmed' | 'rejected' | 'resolved'
+
+    confidence      = Column(Float, nullable=False)
+
+    # Tracks which inference algorithm version produced this — critical for reproducibility
+    inference_engine_version = Column(String(20), nullable=False, server_default="'phg_mvp_v1'")
+
+    # Structured audit trail: which drugs/episodes/signals triggered inference
+    inference_basis = Column(JSONB, nullable=False, server_default="'{}'")
+
+    # Clinician review
+    reviewed_by     = Column(PG_UUID(as_uuid=True), ForeignKey("clinicians.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at     = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+
+    resolved_at     = Column(DateTime(timezone=True), nullable=True)
+    resolution_reason = Column(Text, nullable=True)
+
+    first_inferred_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_updated_at   = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class DrugConditionSignal(Base):
+    """
+    Inference rule table. Seeded at startup. Maps drug INN → inferred condition.
+    signal_strength = P(condition | drug observed), Noisy-OR combined across drugs.
+    """
+    __tablename__ = "drug_condition_signals"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    inn                 = Column(Text,         nullable=False)
+    condition_code      = Column(String(20),   nullable=False)
+    condition_name      = Column(Text,         nullable=False)
+    condition_group     = Column(Text,         nullable=False)
+
+    # Probabilistic fields — sensitivity/specificity populated when feedback available (10k+ patients)
+    signal_strength     = Column(Float, nullable=False)          # P(condition | drug): 0.0–1.0
+    sensitivity         = Column(Float, nullable=False, server_default="0.70")  # P(drug | condition)
+    specificity         = Column(Float, nullable=False, server_default="0.50")  # P(drug for THIS condition | drug prescribed)
+    condition_prevalence = Column(Float, nullable=True)          # India population base rate
+
+    # Drug class behavior — drives episode gap tolerance
+    medication_class    = Column(String(30), nullable=False, server_default="'chronic_oral'")
+    episode_gap_tolerance = Column(Integer, nullable=False, server_default="45")
+    is_prn              = Column(Boolean, nullable=False, server_default="false")
+
+    requires_speciality = Column(Text,    nullable=True)   # only infer if this specialist prescribed
+    min_prescriptions   = Column(Integer, nullable=False, server_default="1")
+
+    __table_args__ = (UniqueConstraint("inn", "condition_code", name="uq_drug_condition"),)
+
+
+class PhgEvent(Base):
+    """
+    Append-only audit log for all PHG state changes.
+    Written in the same transaction as the prescription.
+    payload_schema_version ensures future replay correctness.
+    """
+    __tablename__ = "phg_events"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    event_id        = Column(PG_UUID(as_uuid=True), unique=True, nullable=False, server_default=func.gen_random_uuid())
+    event_type      = Column(String(60), nullable=False)
+
+    # Schema version — increment when payload shape changes
+    payload_schema_version = Column(SmallInteger, nullable=False, server_default="1")
+
+    # Typed FKs (no polymorphic entity_id)
+    patient_id      = Column(PG_UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    prescription_id = Column(PG_UUID(as_uuid=True), ForeignKey("prescriptions.id", ondelete="SET NULL"), nullable=True)
+    episode_id      = Column(PG_UUID(as_uuid=True), nullable=True)   # app-enforced FK
+    condition_id    = Column(PG_UUID(as_uuid=True), nullable=True)   # app-enforced FK
+    doctor_id       = Column(PG_UUID(as_uuid=True), ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True)
+
+    # Which clinician triggered this event (NULL = system/pipeline)
+    source_clinician_id = Column(PG_UUID(as_uuid=True), ForeignKey("clinicians.id", ondelete="SET NULL"), nullable=True)
+
+    payload         = Column(JSONB, nullable=False, server_default="'{}'")
+    created_at      = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PatientDrugReaction(Base):
+    """
+    Allergy and adverse drug reaction registry.
+    Safety critical — cannot be retroactively inferred, must exist from day one.
+    cross_reactive_inns: all INNs that share the allergy (e.g., all penicillins for pen allergy).
+    """
+    __tablename__ = "patient_drug_reactions"
+
+    id                      = Column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    patient_id              = Column(PG_UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    reaction_type           = Column(String(20), nullable=False)
+    # 'allergy' | 'intolerance' | 'adr' | 'contraindication'
+
+    inn                     = Column(Text, nullable=False)
+    cross_reactive_inns     = Column(ARRAY(Text), nullable=True)
+
+    severity                = Column(String(20), nullable=False)
+    # 'life_threatening' | 'severe' | 'moderate' | 'mild'
+
+    manifestation           = Column(Text, nullable=True)
+    source                  = Column(String(20), nullable=False)
+    # 'clinician_entered' | 'inferred_from_discontinuation'
+
+    source_episode_id       = Column(PG_UUID(as_uuid=True), nullable=True)  # app-enforced FK
+    source_prescription_id  = Column(PG_UUID(as_uuid=True), ForeignKey("prescriptions.id", ondelete="SET NULL"), nullable=True)
+
+    recorded_by             = Column(PG_UUID(as_uuid=True), ForeignKey("clinicians.id", ondelete="SET NULL"), nullable=True)
+    recorded_at             = Column(DateTime(timezone=True), server_default=func.now())
+    is_active               = Column(Boolean, nullable=False, server_default="true")
+    notes                   = Column(Text, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # DB helpers
 # ---------------------------------------------------------------------------
 
@@ -293,6 +557,48 @@ def create_all_tables() -> None:
             except Exception as e:
                 logger.warning("Could not run facility_id migration for %s: %s", table_name, e)
 
+        # ── PHG MVP migrations ─────────────────────────────────────────────
+        # Add upload_hash and doctor_id columns to prescriptions
+        for stmt in (
+            "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS upload_hash TEXT",
+            "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL",
+        ):
+            try:
+                conn.execute(text(stmt))
+            except Exception as e:
+                logger.debug("PHG migration (already applied?): %s — %s", stmt[:60], e)
+
+        # Create partial unique index: only one active episode per patient+drug
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_episode_per_drug
+            ON medication_episodes(patient_id, inn)
+            WHERE status = 'active'
+        """))
+
+        # Create partial unique index: only one active/confirmed condition per patient+code
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_condition
+            ON patient_conditions(patient_id, condition_code)
+            WHERE status IN ('probable', 'confirmed')
+        """))
+
+        # Create unique index on doctors.registration_number_normalized
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_doctors_reg_normalized
+            ON doctors(registration_number_normalized)
+            WHERE registration_number_normalized IS NOT NULL
+        """))
+
+        # Additional performance indexes
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_episodes_patient_inn    ON medication_episodes(patient_id, inn)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_episodes_patient_status ON medication_episodes(patient_id, status)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_dosage_hist_episode     ON medication_dosage_history(episode_id, recorded_date DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_phg_events_patient      ON phg_events(patient_id, created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_phg_events_episode      ON phg_events(episode_id) WHERE episode_id IS NOT NULL"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_reactions_patient       ON patient_drug_reactions(patient_id, is_active)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_reactions_inn           ON patient_drug_reactions(inn, is_active)"))
+        logger.info("PHG MVP DDL migrations applied.")
+
     # Seed default facility and clinician if none exist
     db = SessionLocal()
     try:
@@ -325,6 +631,9 @@ def create_all_tables() -> None:
             
         # Seed the 11 baseline rules if empty
         seed_baseline_rules(db)
+
+        # Seed drug condition signals for PHG inference
+        seed_drug_condition_signals(db)
             
         db.commit()
     except Exception as e:
@@ -849,3 +1158,62 @@ def get_clinician_by_email(db: Session, email: str) -> Optional[Clinician]:
     """Retrieve a clinician by email (case-insensitive)."""
     return db.query(Clinician).filter(func.lower(Clinician.email) == email.lower()).first()
 
+
+# ---------------------------------------------------------------------------
+# PHG MVP — Drug Condition Signals Seed
+# ---------------------------------------------------------------------------
+
+def seed_drug_condition_signals(db: Session) -> None:
+    """Seed 30 high-confidence drug→condition inference signals.
+    Idempotent: skips any row where (inn, condition_code) already exists.
+    """
+    if db.query(DrugConditionSignal).count() > 0:
+        return  # already seeded
+
+    logger.info("Seeding drug condition signals for PHG inference engine...")
+    rows = [
+        # inn, condition_code, condition_name, condition_group,
+        # signal_strength, sensitivity, specificity, condition_prevalence,
+        # medication_class, episode_gap_tolerance, is_prn
+        ("metformin",          "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.93, 0.85, 0.90, 0.11, "chronic_oral",       60, False),
+        ("glimepiride",        "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.90, 0.70, 0.85, 0.11, "chronic_oral",       60, False),
+        ("glibenclamide",      "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.88, 0.65, 0.85, 0.11, "chronic_oral",       60, False),
+        ("insulin glargine",   "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.80, 0.40, 0.70, 0.11, "chronic_injectable", 45, False),
+        ("insulin soluble",    "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.75, 0.35, 0.65, 0.11, "chronic_injectable", 45, False),
+        ("levothyroxine",      "E03", "Hypothyroidism",              "metabolic",        0.95, 0.95, 0.97, 0.05, "chronic_oral",       60, False),
+        ("atorvastatin",       "E78", "Dyslipidemia",                "cardiovascular",   0.85, 0.80, 0.80, 0.25, "chronic_oral",       60, False),
+        ("rosuvastatin",       "E78", "Dyslipidemia",                "cardiovascular",   0.85, 0.75, 0.80, 0.25, "chronic_oral",       60, False),
+        ("amlodipine",         "I10", "Hypertension",                "cardiovascular",   0.85, 0.65, 0.75, 0.28, "chronic_oral",       60, False),
+        ("telmisartan",        "I10", "Hypertension",                "cardiovascular",   0.90, 0.60, 0.85, 0.28, "chronic_oral",       60, False),
+        ("ramipril",           "I10", "Hypertension",                "cardiovascular",   0.82, 0.55, 0.70, 0.28, "chronic_oral",       60, False),
+        ("losartan",           "I10", "Hypertension",                "cardiovascular",   0.85, 0.50, 0.80, 0.28, "chronic_oral",       60, False),
+        ("clopidogrel",        "Z95", "Post-PTCA / CAD",             "cardiovascular",   0.85, 0.75, 0.90, 0.05, "chronic_oral",       45, False),
+        ("warfarin",           "I48", "Atrial Fibrillation / DVT",   "cardiovascular",   0.80, 0.70, 0.82, 0.03, "chronic_oral",       45, False),
+        ("aspirin",            "Z87", "CAD Prophylaxis",              "cardiovascular",   0.60, 0.80, 0.45, 0.15, "chronic_oral",       60, False),
+        ("furosemide",         "I50", "Heart Failure",                "cardiovascular",   0.72, 0.65, 0.60, 0.02, "chronic_oral",       45, False),
+        ("salbutamol",         "J45", "Asthma / COPD",               "respiratory",      0.75, 0.85, 0.60, 0.06, "prn",                30, True),
+        ("montelukast",        "J45", "Asthma / Allergic Rhinitis",  "respiratory",      0.78, 0.60, 0.75, 0.06, "chronic_oral",       45, False),
+        ("rifampicin",         "A15", "Pulmonary Tuberculosis",       "infectious",       0.98, 0.98, 0.99, 0.02, "acute_course",       10, False),
+        ("isoniazid",          "A15", "Pulmonary Tuberculosis",       "infectious",       0.98, 0.98, 0.99, 0.02, "acute_course",       10, False),
+        ("carbamazepine",      "G40", "Epilepsy",                     "neurological",     0.90, 0.55, 0.88, 0.01, "chronic_oral",       45, False),
+        ("levetiracetam",      "G40", "Epilepsy",                     "neurological",     0.90, 0.50, 0.90, 0.01, "chronic_oral",       45, False),
+        ("sertraline",         "F32", "Major Depressive Disorder",    "psychiatric",      0.75, 0.45, 0.70, 0.04, "chronic_oral",       60, False),
+        ("olanzapine",         "F20", "Schizophrenia / Bipolar",      "psychiatric",      0.82, 0.60, 0.85, 0.01, "chronic_oral",       60, False),
+        ("methotrexate",       "M06", "Rheumatoid Arthritis",         "rheumatological",  0.88, 0.55, 0.85, 0.01, "periodic",           45, False),
+        ("hydroxychloroquine", "M05", "Rheumatoid Arthritis / SLE",   "rheumatological",  0.78, 0.60, 0.75, 0.01, "chronic_oral",       60, False),
+        ("allopurinol",        "M10", "Gout / Hyperuricemia",         "metabolic",        0.92, 0.85, 0.95, 0.02, "chronic_oral",       60, False),
+        ("ramipril",           "N18", "Chronic Kidney Disease",       "renal",            0.60, 0.50, 0.40, 0.01, "chronic_oral",       60, False),
+        ("ibuprofen",          "M79", "Musculoskeletal Pain",         "musculoskeletal",  0.45, 0.70, 0.35, 0.20, "prn",                 7, True),
+        ("tramadol",           "M79", "Musculoskeletal Pain",         "musculoskeletal",  0.50, 0.50, 0.45, 0.20, "acute_course",        7, False),
+    ]
+    for r in rows:
+        try:
+            db.add(DrugConditionSignal(
+                inn=r[0], condition_code=r[1], condition_name=r[2], condition_group=r[3],
+                signal_strength=r[4], sensitivity=r[5], specificity=r[6], condition_prevalence=r[7],
+                medication_class=r[8], episode_gap_tolerance=r[9], is_prn=r[10],
+            ))
+            db.flush()
+        except Exception:
+            db.rollback()  # skip duplicate (already seeded)
+    logger.info("Drug condition signals seeded (%d rows).", len(rows))
