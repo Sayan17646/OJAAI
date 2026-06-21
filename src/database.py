@@ -270,7 +270,7 @@ class Doctor(Base):
     speciality_group                = Column(String(30),   nullable=True)  # 'metabolic'|'cardiovascular'|etc.
     clinic_name                     = Column(Text,         nullable=True)
     facility_id                     = Column(PG_UUID(as_uuid=True), ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True)
-    raw_name_variants               = Column(JSONB, nullable=False, server_default="'[]'")
+    raw_name_variants               = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     first_seen_at                   = Column(DateTime(timezone=True), server_default=func.now())
     updated_at                      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -295,10 +295,10 @@ class MedicationEpisode(Base):
     fdc_components      = Column(ARRAY(Text), nullable=True)  # ['metformin', 'glibenclamide']
 
     # Dispensing behavior — drives episode boundary logic
-    dispensing_type     = Column(String(20), nullable=False, server_default="'scheduled'")
+    dispensing_type     = Column(String(20), nullable=False, server_default="scheduled")
     # 'scheduled' | 'acute' | 'prn' | 'periodic'
 
-    status              = Column(String(20), nullable=False, server_default="'active'")
+    status              = Column(String(20), nullable=False, server_default="active")
     # 'active' | 'completed' | 'discontinued' | 'prn_snapshot' | 'unknown'
 
     start_date          = Column(Date, nullable=False)
@@ -389,16 +389,16 @@ class PatientCondition(Base):
     # episode_number enables condition recurrence without destroying history
     episode_number  = Column(Integer, nullable=False, server_default="1")
 
-    status          = Column(String(20), nullable=False, server_default="'probable'")
+    status          = Column(String(20), nullable=False, server_default="probable")
     # 'probable' | 'confirmed' | 'rejected' | 'resolved'
 
     confidence      = Column(Float, nullable=False)
 
     # Tracks which inference algorithm version produced this — critical for reproducibility
-    inference_engine_version = Column(String(20), nullable=False, server_default="'phg_mvp_v1'")
+    inference_engine_version = Column(String(20), nullable=False, server_default="phg_mvp_v1")
 
     # Structured audit trail: which drugs/episodes/signals triggered inference
-    inference_basis = Column(JSONB, nullable=False, server_default="'{}'")
+    inference_basis = Column(JSONB, nullable=False, server_default=text("'{}' :: jsonb"))
 
     # Clinician review
     reviewed_by     = Column(PG_UUID(as_uuid=True), ForeignKey("clinicians.id", ondelete="SET NULL"), nullable=True)
@@ -432,7 +432,7 @@ class DrugConditionSignal(Base):
     condition_prevalence = Column(Float, nullable=True)          # India population base rate
 
     # Drug class behavior — drives episode gap tolerance
-    medication_class    = Column(String(30), nullable=False, server_default="'chronic_oral'")
+    medication_class    = Column(String(30), nullable=False, server_default="chronic_oral")
     episode_gap_tolerance = Column(Integer, nullable=False, server_default="45")
     is_prn              = Column(Boolean, nullable=False, server_default="false")
 
@@ -467,7 +467,7 @@ class PhgEvent(Base):
     # Which clinician triggered this event (NULL = system/pipeline)
     source_clinician_id = Column(PG_UUID(as_uuid=True), ForeignKey("clinicians.id", ondelete="SET NULL"), nullable=True)
 
-    payload         = Column(JSONB, nullable=False, server_default="'{}'")
+    payload         = Column(JSONB, nullable=False, server_default=text("'{}' :: jsonb"))
     created_at      = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -1163,57 +1163,175 @@ def get_clinician_by_email(db: Session, email: str) -> Optional[Clinician]:
 # PHG MVP — Drug Condition Signals Seed
 # ---------------------------------------------------------------------------
 
-def seed_drug_condition_signals(db: Session) -> None:
-    """Seed 30 high-confidence drug→condition inference signals.
-    Idempotent: skips any row where (inn, condition_code) already exists.
-    """
-    if db.query(DrugConditionSignal).count() > 0:
-        return  # already seeded
 
-    logger.info("Seeding drug condition signals for PHG inference engine...")
-    rows = [
-        # inn, condition_code, condition_name, condition_group,
-        # signal_strength, sensitivity, specificity, condition_prevalence,
-        # medication_class, episode_gap_tolerance, is_prn
-        ("metformin",          "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.93, 0.85, 0.90, 0.11, "chronic_oral",       60, False),
-        ("glimepiride",        "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.90, 0.70, 0.85, 0.11, "chronic_oral",       60, False),
-        ("glibenclamide",      "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.88, 0.65, 0.85, 0.11, "chronic_oral",       60, False),
-        ("insulin glargine",   "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.80, 0.40, 0.70, 0.11, "chronic_injectable", 45, False),
-        ("insulin soluble",    "E11", "Type 2 Diabetes Mellitus",   "metabolic",        0.75, 0.35, 0.65, 0.11, "chronic_injectable", 45, False),
-        ("levothyroxine",      "E03", "Hypothyroidism",              "metabolic",        0.95, 0.95, 0.97, 0.05, "chronic_oral",       60, False),
-        ("atorvastatin",       "E78", "Dyslipidemia",                "cardiovascular",   0.85, 0.80, 0.80, 0.25, "chronic_oral",       60, False),
-        ("rosuvastatin",       "E78", "Dyslipidemia",                "cardiovascular",   0.85, 0.75, 0.80, 0.25, "chronic_oral",       60, False),
-        ("amlodipine",         "I10", "Hypertension",                "cardiovascular",   0.85, 0.65, 0.75, 0.28, "chronic_oral",       60, False),
-        ("telmisartan",        "I10", "Hypertension",                "cardiovascular",   0.90, 0.60, 0.85, 0.28, "chronic_oral",       60, False),
-        ("ramipril",           "I10", "Hypertension",                "cardiovascular",   0.82, 0.55, 0.70, 0.28, "chronic_oral",       60, False),
-        ("losartan",           "I10", "Hypertension",                "cardiovascular",   0.85, 0.50, 0.80, 0.28, "chronic_oral",       60, False),
-        ("clopidogrel",        "Z95", "Post-PTCA / CAD",             "cardiovascular",   0.85, 0.75, 0.90, 0.05, "chronic_oral",       45, False),
-        ("warfarin",           "I48", "Atrial Fibrillation / DVT",   "cardiovascular",   0.80, 0.70, 0.82, 0.03, "chronic_oral",       45, False),
-        ("aspirin",            "Z87", "CAD Prophylaxis",              "cardiovascular",   0.60, 0.80, 0.45, 0.15, "chronic_oral",       60, False),
-        ("furosemide",         "I50", "Heart Failure",                "cardiovascular",   0.72, 0.65, 0.60, 0.02, "chronic_oral",       45, False),
-        ("salbutamol",         "J45", "Asthma / COPD",               "respiratory",      0.75, 0.85, 0.60, 0.06, "prn",                30, True),
-        ("montelukast",        "J45", "Asthma / Allergic Rhinitis",  "respiratory",      0.78, 0.60, 0.75, 0.06, "chronic_oral",       45, False),
-        ("rifampicin",         "A15", "Pulmonary Tuberculosis",       "infectious",       0.98, 0.98, 0.99, 0.02, "acute_course",       10, False),
-        ("isoniazid",          "A15", "Pulmonary Tuberculosis",       "infectious",       0.98, 0.98, 0.99, 0.02, "acute_course",       10, False),
-        ("carbamazepine",      "G40", "Epilepsy",                     "neurological",     0.90, 0.55, 0.88, 0.01, "chronic_oral",       45, False),
-        ("levetiracetam",      "G40", "Epilepsy",                     "neurological",     0.90, 0.50, 0.90, 0.01, "chronic_oral",       45, False),
-        ("sertraline",         "F32", "Major Depressive Disorder",    "psychiatric",      0.75, 0.45, 0.70, 0.04, "chronic_oral",       60, False),
-        ("olanzapine",         "F20", "Schizophrenia / Bipolar",      "psychiatric",      0.82, 0.60, 0.85, 0.01, "chronic_oral",       60, False),
-        ("methotrexate",       "M06", "Rheumatoid Arthritis",         "rheumatological",  0.88, 0.55, 0.85, 0.01, "periodic",           45, False),
-        ("hydroxychloroquine", "M05", "Rheumatoid Arthritis / SLE",   "rheumatological",  0.78, 0.60, 0.75, 0.01, "chronic_oral",       60, False),
-        ("allopurinol",        "M10", "Gout / Hyperuricemia",         "metabolic",        0.92, 0.85, 0.95, 0.02, "chronic_oral",       60, False),
-        ("ramipril",           "N18", "Chronic Kidney Disease",       "renal",            0.60, 0.50, 0.40, 0.01, "chronic_oral",       60, False),
-        ("ibuprofen",          "M79", "Musculoskeletal Pain",         "musculoskeletal",  0.45, 0.70, 0.35, 0.20, "prn",                 7, True),
-        ("tramadol",           "M79", "Musculoskeletal Pain",         "musculoskeletal",  0.50, 0.50, 0.45, 0.20, "acute_course",        7, False),
+def seed_drug_condition_signals(db: Session) -> None:
+    """
+    Seed drug → condition inference signals for the PHG engine.
+
+    Design:
+      - Uses INSERT … ON CONFLICT DO NOTHING so it's fully idempotent.
+      - Does NOT rollback the parent transaction on duplicates.
+      - 70 signals covering the most common Indian outpatient conditions.
+
+    Signal columns (per row tuple):
+      inn, condition_code, condition_name, condition_group,
+      signal_strength, sensitivity, specificity, condition_prevalence,
+      medication_class, episode_gap_tolerance, is_prn,
+      min_prescriptions, requires_speciality
+    """
+    SIGNALS: list[tuple] = [
+        # ── METABOLIC ─────────────────────────────────────────────────────────
+        # Type 2 Diabetes (ICD-10: E11)  — India prevalence ~11%
+        ("metformin",              "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.93, 0.85, 0.90, 0.11, "chronic_oral",       60, False, 1,  None),
+        ("glimepiride",            "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.90, 0.70, 0.85, 0.11, "chronic_oral",       60, False, 1,  None),
+        ("glibenclamide",          "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.88, 0.65, 0.85, 0.11, "chronic_oral",       60, False, 1,  None),
+        ("gliclazide",             "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.88, 0.62, 0.85, 0.11, "chronic_oral",       60, False, 1,  None),
+        ("sitagliptin",            "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.87, 0.55, 0.88, 0.11, "chronic_oral",       60, False, 2,  None),
+        ("vildagliptin",           "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.87, 0.50, 0.88, 0.11, "chronic_oral",       60, False, 2,  None),
+        ("dapagliflozin",          "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.88, 0.45, 0.88, 0.11, "chronic_oral",       60, False, 2,  None),
+        ("empagliflozin",          "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.88, 0.40, 0.88, 0.11, "chronic_oral",       60, False, 2,  None),
+        ("insulin glargine",       "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.80, 0.40, 0.70, 0.11, "chronic_injectable", 45, False, 1,  None),
+        ("insulin aspart",         "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.78, 0.38, 0.68, 0.11, "chronic_injectable", 45, False, 1,  None),
+        ("insulin soluble",        "E11", "Type 2 Diabetes Mellitus",   "metabolic",       0.75, 0.35, 0.65, 0.11, "chronic_injectable", 45, False, 1,  None),
+        # Hypothyroidism (E03)  — India prevalence ~5%
+        ("levothyroxine",          "E03", "Hypothyroidism",             "metabolic",       0.95, 0.95, 0.97, 0.05, "chronic_oral",       60, False, 1,  None),
+        ("thyroxine",              "E03", "Hypothyroidism",             "metabolic",       0.95, 0.95, 0.97, 0.05, "chronic_oral",       60, False, 1,  None),
+        # Dyslipidemia (E78)  — India prevalence ~25%
+        ("atorvastatin",           "E78", "Dyslipidemia",               "metabolic",       0.85, 0.80, 0.80, 0.25, "chronic_oral",       60, False, 1,  None),
+        ("rosuvastatin",           "E78", "Dyslipidemia",               "metabolic",       0.85, 0.75, 0.80, 0.25, "chronic_oral",       60, False, 1,  None),
+        ("simvastatin",            "E78", "Dyslipidemia",               "metabolic",       0.82, 0.70, 0.78, 0.25, "chronic_oral",       60, False, 1,  None),
+        ("fenofibrate",            "E78", "Dyslipidemia",               "metabolic",       0.75, 0.55, 0.80, 0.25, "chronic_oral",       60, False, 2,  None),
+        # Gout / Hyperuricemia (M10)
+        ("allopurinol",            "M10", "Gout / Hyperuricemia",       "metabolic",       0.92, 0.85, 0.95, 0.02, "chronic_oral",       60, False, 1,  None),
+        ("febuxostat",             "M10", "Gout / Hyperuricemia",       "metabolic",       0.90, 0.70, 0.95, 0.02, "chronic_oral",       60, False, 2,  None),
+
+        # ── CARDIOVASCULAR ────────────────────────────────────────────────────
+        # Hypertension (I10)  — India prevalence ~28%
+        ("amlodipine",             "I10", "Hypertension",               "cardiovascular",  0.85, 0.65, 0.75, 0.28, "chronic_oral",       60, False, 1,  None),
+        ("telmisartan",            "I10", "Hypertension",               "cardiovascular",  0.90, 0.60, 0.85, 0.28, "chronic_oral",       60, False, 1,  None),
+        ("ramipril",               "I10", "Hypertension",               "cardiovascular",  0.82, 0.55, 0.70, 0.28, "chronic_oral",       60, False, 1,  None),
+        ("losartan",               "I10", "Hypertension",               "cardiovascular",  0.85, 0.50, 0.80, 0.28, "chronic_oral",       60, False, 1,  None),
+        ("olmesartan",             "I10", "Hypertension",               "cardiovascular",  0.85, 0.45, 0.80, 0.28, "chronic_oral",       60, False, 1,  None),
+        ("metoprolol",             "I10", "Hypertension",               "cardiovascular",  0.72, 0.55, 0.60, 0.28, "chronic_oral",       60, False, 1,  None),
+        ("bisoprolol",             "I10", "Hypertension",               "cardiovascular",  0.72, 0.50, 0.60, 0.28, "chronic_oral",       60, False, 1,  None),
+        ("hydrochlorothiazide",    "I10", "Hypertension",               "cardiovascular",  0.70, 0.45, 0.55, 0.28, "chronic_oral",       60, False, 1,  None),
+        # CAD / post-PTCA (Z95)
+        ("clopidogrel",            "Z95", "Coronary Artery Disease",    "cardiovascular",  0.85, 0.75, 0.90, 0.05, "chronic_oral",       45, False, 1,  None),
+        ("aspirin",                "Z87", "CAD Prophylaxis",            "cardiovascular",  0.60, 0.80, 0.45, 0.15, "chronic_oral",       60, False, 1,  None),
+        # Heart Failure (I50)
+        ("furosemide",             "I50", "Heart Failure",              "cardiovascular",  0.72, 0.65, 0.60, 0.02, "chronic_oral",       45, False, 2, "cardiovascular"),
+        ("spironolactone",         "I50", "Heart Failure",              "cardiovascular",  0.70, 0.55, 0.65, 0.02, "chronic_oral",       45, False, 2, "cardiovascular"),
+        # Atrial fibrillation / DVT (I48)
+        ("warfarin",               "I48", "Atrial Fibrillation / DVT",  "cardiovascular",  0.80, 0.70, 0.82, 0.03, "chronic_oral",       45, False, 1,  None),
+        ("rivaroxaban",            "I48", "Atrial Fibrillation / DVT",  "cardiovascular",  0.82, 0.65, 0.85, 0.03, "chronic_oral",       45, False, 1,  None),
+        ("dabigatran",             "I48", "Atrial Fibrillation / DVT",  "cardiovascular",  0.82, 0.60, 0.85, 0.03, "chronic_oral",       45, False, 1,  None),
+
+        # ── RESPIRATORY ───────────────────────────────────────────────────────
+        # Asthma / COPD (J45 / J44)
+        ("salbutamol",             "J45", "Asthma / COPD",              "respiratory",     0.75, 0.85, 0.60, 0.06, "prn",                30, True,  1,  None),
+        ("montelukast",            "J45", "Asthma / Allergic Rhinitis", "respiratory",     0.78, 0.60, 0.75, 0.06, "chronic_oral",       45, False, 1,  None),
+        ("budesonide",             "J45", "Asthma / COPD",              "respiratory",     0.82, 0.65, 0.78, 0.06, "chronic_inhaled",    45, False, 2,  None),
+        ("tiotropium",             "J44", "COPD",                       "respiratory",     0.85, 0.70, 0.85, 0.03, "chronic_inhaled",    45, False, 2,  None),
+        ("formoterol",             "J45", "Asthma / COPD",              "respiratory",     0.80, 0.62, 0.78, 0.06, "chronic_inhaled",    45, False, 2,  None),
+
+        # ── INFECTIOUS ────────────────────────────────────────────────────────
+        # Pulmonary Tuberculosis (A15)  — high signal, specialist context
+        ("rifampicin",             "A15", "Pulmonary Tuberculosis",     "infectious",      0.98, 0.98, 0.99, 0.02, "acute_course",       10, False, 1, "pulmonology"),
+        ("isoniazid",              "A15", "Pulmonary Tuberculosis",     "infectious",      0.98, 0.98, 0.99, 0.02, "acute_course",       10, False, 1, "pulmonology"),
+        ("pyrazinamide",           "A15", "Pulmonary Tuberculosis",     "infectious",      0.97, 0.95, 0.99, 0.02, "acute_course",       10, False, 1, "pulmonology"),
+        ("ethambutol",             "A15", "Pulmonary Tuberculosis",     "infectious",      0.97, 0.95, 0.99, 0.02, "acute_course",       10, False, 1, "pulmonology"),
+        # Malaria (B54)
+        ("chloroquine",            "B54", "Malaria",                    "infectious",      0.85, 0.80, 0.90, 0.01, "acute_course",       10, False, 1,  None),
+        ("artemether",             "B54", "Malaria",                    "infectious",      0.90, 0.85, 0.92, 0.01, "acute_course",        7, False, 1,  None),
+        ("primaquine",             "B54", "Malaria",                    "infectious",      0.85, 0.80, 0.90, 0.01, "acute_course",        7, False, 1,  None),
+
+        # ── NEUROLOGICAL ──────────────────────────────────────────────────────
+        # Epilepsy (G40)
+        ("carbamazepine",          "G40", "Epilepsy",                   "neurological",    0.90, 0.55, 0.88, 0.01, "chronic_oral",       45, False, 1, "neurology"),
+        ("levetiracetam",          "G40", "Epilepsy",                   "neurological",    0.90, 0.50, 0.90, 0.01, "chronic_oral",       45, False, 1, "neurology"),
+        ("valproate",              "G40", "Epilepsy",                   "neurological",    0.88, 0.55, 0.85, 0.01, "chronic_oral",       45, False, 1, "neurology"),
+        ("phenytoin",              "G40", "Epilepsy",                   "neurological",    0.88, 0.50, 0.88, 0.01, "chronic_oral",       45, False, 1, "neurology"),
+        # Parkinson's (G20)
+        ("levodopa",               "G20", "Parkinson's Disease",        "neurological",    0.95, 0.90, 0.98, 0.002,"chronic_oral",       60, False, 1, "neurology"),
+        ("pramipexole",            "G20", "Parkinson's Disease",        "neurological",    0.88, 0.70, 0.90, 0.002,"chronic_oral",       60, False, 2, "neurology"),
+        # Migraine (G43)
+        ("topiramate",             "G43", "Migraine Prophylaxis",       "neurological",    0.82, 0.55, 0.85, 0.01, "chronic_oral",       60, False, 2,  None),
+        ("sumatriptan",            "G43", "Migraine",                   "neurological",    0.88, 0.80, 0.90, 0.01, "prn",                30, True,  1,  None),
+
+        # ── PSYCHIATRIC ───────────────────────────────────────────────────────
+        # Major Depressive Disorder (F32)
+        ("sertraline",             "F32", "Major Depressive Disorder",  "psychiatric",     0.75, 0.45, 0.70, 0.04, "chronic_oral",       60, False, 2, "psychiatry"),
+        ("escitalopram",           "F32", "Major Depressive Disorder",  "psychiatric",     0.75, 0.45, 0.72, 0.04, "chronic_oral",       60, False, 2, "psychiatry"),
+        ("fluoxetine",             "F32", "Major Depressive Disorder",  "psychiatric",     0.72, 0.42, 0.70, 0.04, "chronic_oral",       60, False, 2, "psychiatry"),
+        # Schizophrenia / Bipolar (F20)
+        ("olanzapine",             "F20", "Schizophrenia / Bipolar",   "psychiatric",     0.82, 0.60, 0.85, 0.01, "chronic_oral",       60, False, 2, "psychiatry"),
+        ("risperidone",            "F20", "Schizophrenia / Bipolar",   "psychiatric",     0.82, 0.58, 0.85, 0.01, "chronic_oral",       60, False, 2, "psychiatry"),
+        ("lithium",                "F31", "Bipolar Affective Disorder", "psychiatric",     0.90, 0.75, 0.95, 0.01, "chronic_oral",       60, False, 2, "psychiatry"),
+        # Anxiety (F41)
+        ("clonazepam",             "F41", "Anxiety Disorder",           "psychiatric",     0.70, 0.55, 0.65, 0.04, "prn",                14, True,  1, "psychiatry"),
+        ("alprazolam",             "F41", "Anxiety Disorder",           "psychiatric",     0.65, 0.55, 0.60, 0.04, "prn",                14, True,  1, "psychiatry"),
+
+        # ── RHEUMATOLOGICAL ───────────────────────────────────────────────────
+        # Rheumatoid Arthritis (M06 / M05)
+        ("methotrexate",           "M06", "Rheumatoid Arthritis",       "rheumatological", 0.88, 0.55, 0.85, 0.01, "periodic",           45, False, 2, "rheumatology"),
+        ("hydroxychloroquine",     "M05", "Rheumatoid Arthritis / SLE", "rheumatological", 0.78, 0.60, 0.75, 0.01, "chronic_oral",       60, False, 2, "rheumatology"),
+        ("sulfasalazine",          "M06", "Rheumatoid Arthritis",       "rheumatological", 0.82, 0.50, 0.80, 0.01, "chronic_oral",       60, False, 2, "rheumatology"),
+
+        # ── RENAL ─────────────────────────────────────────────────────────────
+        # Chronic Kidney Disease (N18)
+        ("sevelamer",              "N18", "Chronic Kidney Disease",     "renal",           0.85, 0.65, 0.88, 0.01, "chronic_oral",       60, False, 2, "nephrology"),
+        ("erythropoietin",         "N18", "Chronic Kidney Disease",     "renal",           0.90, 0.70, 0.92, 0.01, "periodic",           30, False, 2, "nephrology"),
+
+        # ── MUSCULOSKELETAL ───────────────────────────────────────────────────
+        # Musculoskeletal Pain (M79) — PRN signal, low strength
+        ("ibuprofen",              "M79", "Musculoskeletal Pain",       "musculoskeletal", 0.45, 0.70, 0.35, 0.20, "prn",                 7, True,  1,  None),
+        ("diclofenac",             "M79", "Musculoskeletal Pain",       "musculoskeletal", 0.45, 0.70, 0.35, 0.20, "prn",                 7, True,  1,  None),
+        ("tramadol",               "M79", "Musculoskeletal Pain",       "musculoskeletal", 0.50, 0.50, 0.45, 0.20, "acute_course",        7, False, 1,  None),
+        # Osteoporosis (M81)
+        ("alendronate",            "M81", "Osteoporosis",               "musculoskeletal", 0.88, 0.70, 0.90, 0.01, "periodic",           45, False, 2,  None),
+
+        # ── GASTROINTESTINAL ──────────────────────────────────────────────────
+        # GERD / PUD (K21 / K27)
+        ("omeprazole",             "K21", "GERD / Peptic Ulcer",        "gastrointestinal",0.75, 0.80, 0.65, 0.08, "chronic_oral",       45, False, 1,  None),
+        ("pantoprazole",           "K21", "GERD / Peptic Ulcer",        "gastrointestinal",0.75, 0.80, 0.65, 0.08, "chronic_oral",       45, False, 1,  None),
+        ("rabeprazole",            "K21", "GERD / Peptic Ulcer",        "gastrointestinal",0.75, 0.75, 0.65, 0.08, "chronic_oral",       45, False, 1,  None),
+        # Inflammatory Bowel (K51)
+        ("mesalazine",             "K51", "Inflammatory Bowel Disease", "gastrointestinal",0.90, 0.75, 0.90, 0.003,"chronic_oral",       45, False, 2, "gastroenterology"),
+        ("prednisolone",           "K51", "Inflammatory Bowel Disease", "gastrointestinal",0.65, 0.60, 0.40, 0.003,"acute_course",       14, False, 2, "gastroenterology"),
     ]
-    for r in rows:
-        try:
-            db.add(DrugConditionSignal(
-                inn=r[0], condition_code=r[1], condition_name=r[2], condition_group=r[3],
-                signal_strength=r[4], sensitivity=r[5], specificity=r[6], condition_prevalence=r[7],
-                medication_class=r[8], episode_gap_tolerance=r[9], is_prn=r[10],
-            ))
-            db.flush()
-        except Exception:
-            db.rollback()  # skip duplicate (already seeded)
-    logger.info("Drug condition signals seeded (%d rows).", len(rows))
+
+    # Use raw SQL INSERT ON CONFLICT DO NOTHING — safe to call repeatedly
+    insert_sql = text("""
+        INSERT INTO drug_condition_signals
+            (inn, condition_code, condition_name, condition_group,
+             signal_strength, sensitivity, specificity, condition_prevalence,
+             medication_class, episode_gap_tolerance, is_prn,
+             min_prescriptions, requires_speciality)
+        VALUES
+            (:inn, :condition_code, :condition_name, :condition_group,
+             :signal_strength, :sensitivity, :specificity, :condition_prevalence,
+             :medication_class, :episode_gap_tolerance, :is_prn,
+             :min_prescriptions, :requires_speciality)
+        ON CONFLICT (inn, condition_code) DO NOTHING
+    """)
+
+    inserted = 0
+    for s in SIGNALS:
+        db.execute(insert_sql, {
+            "inn":                  s[0],
+            "condition_code":       s[1],
+            "condition_name":       s[2],
+            "condition_group":      s[3],
+            "signal_strength":      s[4],
+            "sensitivity":          s[5],
+            "specificity":          s[6],
+            "condition_prevalence": s[7],
+            "medication_class":     s[8],
+            "episode_gap_tolerance": s[9],
+            "is_prn":               s[10],
+            "min_prescriptions":    s[11],
+            "requires_speciality":  s[12],
+        })
+        inserted += 1
+
+    logger.info("Drug condition signals seed complete — %d rows processed.", inserted)
