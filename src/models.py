@@ -321,5 +321,124 @@ class CreateClinicalSafetyRuleInput(BaseModel):
 ReviewQueueDetailResponse.model_rebuild()
 
 
+# ---------------------------------------------------------------------------
+# PHG MVP — Patient History Graph response shapes
+# ---------------------------------------------------------------------------
+
+class DoctorSnapshot(BaseModel):
+    """Prescribing doctor as seen on an episode or prescription."""
+    id: str
+    name: Optional[str] = None
+    speciality: Optional[str] = None
+    speciality_group: Optional[str] = None
+    clinic_name: Optional[str] = None
+    registration_number: Optional[str] = None
 
 
+class DosageHistoryEntry(BaseModel):
+    """One prescribing event within a medication episode."""
+    id: int
+    raw_drug_name: str
+    dosage_value: Optional[float] = None
+    dosage_unit: Optional[str] = None
+    frequency: Optional[str] = None
+    freq_per_day: Optional[float] = None
+    duration_days: Optional[int] = None
+    route: Optional[str] = None
+    stop_reason: Optional[str] = None
+    switched_to_inn: Optional[str] = None
+    refill_number: int = 1
+    recorded_date: Optional[str] = None
+
+
+class MedicationEpisodeResponse(BaseModel):
+    """One continuous treatment episode for a single drug."""
+    id: str
+    inn: str
+    is_fdc: bool = False
+    fdc_components: List[str] = Field(default_factory=list)
+    dispensing_type: str
+    status: str
+    start_date: Optional[str] = None
+    estimated_end_date: Optional[str] = None
+    actual_end_date: Optional[str] = None
+    gap_tolerance_days: int
+    prescription_count: int
+    latest_dosage: Optional[str] = None
+    latest_frequency: Optional[str] = None
+    version: int
+    dosage_history: List[DosageHistoryEntry] = Field(default_factory=list)
+    latest_doctor: Optional[DoctorSnapshot] = None
+
+
+class ConditionResponse(BaseModel):
+    """An inferred condition with confidence and audit trail."""
+    id: str
+    condition_code: str
+    condition_name: str
+    condition_group: Optional[str] = None
+    episode_number: int = 1
+    status: str                         # probable | confirmed | rejected | resolved
+    confidence: float
+    inference_engine_version: str
+    inference_basis: dict = Field(default_factory=dict)
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    resolved_at: Optional[str] = None
+    first_inferred_at: Optional[str] = None
+    last_updated_at: Optional[str] = None
+
+
+class DrugReactionResponse(BaseModel):
+    """Allergy or adverse drug reaction record."""
+    id: str
+    reaction_type: str
+    inn: str
+    cross_reactive_inns: List[str] = Field(default_factory=list)
+    severity: str
+    manifestation: Optional[str] = None
+    source: str
+    is_active: bool
+    recorded_at: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PatientGraphSummary(BaseModel):
+    """Summary counts for the patient graph overview."""
+    active_medication_count: int
+    probable_conditions: int
+    confirmed_conditions: int
+    active_reactions: int
+
+
+class PatientGraphResponse(BaseModel):
+    """Full PHG snapshot for a patient. Response for GET /api/patients/{phone}/graph."""
+    patient_id: str
+    active_medications: List[MedicationEpisodeResponse] = Field(default_factory=list)
+    conditions: List[ConditionResponse] = Field(default_factory=list)
+    drug_reactions: List[DrugReactionResponse] = Field(default_factory=list)
+    prescribing_doctors: List[DoctorSnapshot] = Field(default_factory=list)
+    summary: PatientGraphSummary
+
+
+class ConditionReviewInput(BaseModel):
+    """
+    Clinician review input for POST /api/patients/{phone}/conditions/{code}/confirm.
+    action='confirm' → status becomes 'confirmed'
+    action='reject'  → status becomes 'rejected', rejection_reason required
+    action='resolve' → status becomes 'resolved', resolution_reason required
+    """
+    action: str = Field(pattern="^(confirm|reject|resolve)$")
+    rejection_reason: Optional[str] = None
+    resolution_reason: Optional[str] = None
+
+
+class RecordAllergyInput(BaseModel):
+    """Input for POST /api/patients/{phone}/reactions — record allergy or ADR."""
+    reaction_type: str = Field(pattern="^(allergy|intolerance|adr|contraindication)$")
+    inn: str
+    cross_reactive_inns: List[str] = Field(default_factory=list)
+    severity: str = Field(pattern="^(life_threatening|severe|moderate|mild)$")
+    manifestation: Optional[str] = None
+    notes: Optional[str] = None

@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from src.api import app
 from src.database import (
     SessionLocal, Clinician, Facility, AuditLog, Patient,
-    LabReport, LabResult, ClinicalSafetyRule, ReviewQueue, create_all_tables, hash_password
+    LabReport, LabResult, ClinicalSafetyRule, ReviewQueue, create_all_tables, hash_password,
+    Doctor, MedicationEpisode, MedicationDosageHistory, PatientCondition, PhgEvent
 )
 from src.models import LabResultExtracted, NormalizedDrug
 from src.clinical_checker import check_clinical_safety
@@ -38,6 +39,11 @@ def setup_rules_data(db_session: Session):
     db_session.query(ClinicalSafetyRule).delete()
     db_session.query(AuditLog).delete()
     db_session.query(ReviewQueue).delete()
+    db_session.query(PhgEvent).delete()
+    db_session.query(PatientCondition).delete()
+    db_session.query(MedicationDosageHistory).delete()
+    db_session.query(MedicationEpisode).delete()
+    db_session.query(Doctor).delete()
     db_session.query(LabResult).delete()
     db_session.query(LabReport).delete()
     db_session.query(Patient).delete()

@@ -30,8 +30,11 @@ logger = logging.getLogger(__name__)
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if GEMINI_API_KEY.lower() in ("none", "disabled", "false", ""):
+    GEMINI_API_KEY = ""
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
+
 
 # Fallback model chain: tried in order when the primary model's daily quota is exhausted.
 # Only triggered on RESOURCE_EXHAUSTED (quota), not on rate-limit 429s (those are retried).

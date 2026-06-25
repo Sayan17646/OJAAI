@@ -628,7 +628,15 @@ class TestDashboardEndpoints:
             # Clean up test items
             db.rollback()
             # Delete our test rows in correct dependency order
-            from src.database import ReviewQueue, Prescription, Medication, Patient, DrugInteractionRecord
+            from src.database import (
+                ReviewQueue, Prescription, Medication, Patient, DrugInteractionRecord,
+                Doctor, MedicationEpisode, MedicationDosageHistory, PatientCondition, PhgEvent
+            )
+            db.query(PhgEvent).delete()
+            db.query(PatientCondition).delete()
+            db.query(MedicationDosageHistory).delete()
+            db.query(MedicationEpisode).delete()
+            db.query(Doctor).delete()
             db.query(Medication).delete()
             db.query(DrugInteractionRecord).delete()
             db.query(Prescription).delete()

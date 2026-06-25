@@ -62,8 +62,20 @@ from src.models import (
     ClinicianLoginInput,
     ClinicalSafetyRuleSchema,
     CreateClinicalSafetyRuleInput,
+    # PHG MVP
+    PatientGraphResponse,
+    MedicationEpisodeResponse,
+    ConditionResponse,
+    ConditionReviewInput,
+    RecordAllergyInput,
+    DrugReactionResponse,
 )
 from src.pipeline import process_prescription
+from src.patient_history import PatientHistoryService
+from src.episode_manager import EpisodeManager
+from src.database import PatientCondition, PatientDrugReaction
+from src.event_store import EventStore
+from src.event_schemas import CONDITION_CONFIRMED, CONDITION_REJECTED, CONDITION_RESOLVED, ALLERGY_RECORDED
 
 load_dotenv()
 
@@ -1665,6 +1677,7 @@ if os.path.exists(prescriptions_dir):
 os.makedirs("./src/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="./src/static"), name="static")
 
+
 @app.get("/dashboard", include_in_schema=False)
 def serve_dashboard() -> FileResponse:
     """Serve the clinical audit dashboard SPA."""
@@ -1674,3 +1687,252 @@ def serve_dashboard() -> FileResponse:
             f.write("<h1>OJAAI Clinical Audit Dashboard</h1>")
     return FileResponse(dashboard_path)
 
+
+# ===========================================================================
+# PHG MVP Endpoints
+# ===========================================================================
+
+@app.get(
+    "/api/patients/{phone}/graph",
+    response_model=PatientGraphResponse,
+    tags=["Patient History Graph"],
+    summary="Full patient history graph",
+    description=(
+        "Returns the complete PHG snapshot for a patient: "
+        "active medication episodes, inferred conditions with confidence, "
+        "known drug reactions/allergies, and prescribing doctors. "
+        "Use this as the primary read endpoint for longitudinal patient intelligence."
+    ),
+)
+def get_patient_graph(
+    phone: str,
+    db: Session = Depends(get_db),
+    _: str = Depends(verify_api_key),
+) -> PatientGraphResponse:
+    """GET /api/patients/{phone}/graph — full PHG snapshot."""
+    patient = PatientHistoryService.get_patient_by_phone(db, phone)
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {phone}")
+
+    graph = PatientHistoryService.get_full_graph(db, patient.id)
+    return PatientGraphResponse(**graph)
+
+
+@app.get(
+    "/api/patients/{phone}/timeline",
+    tags=["Patient History Graph"],
+    summary="Full medication timeline",
+    description=(
+        "Returns all medication episodes for the patient sorted by start_date DESC. "
+        "Includes complete dosage history per episode (all prescriptions within the episode). "
+        "Use this to review the patient's longitudinal medication history."
+    ),
+)
+def get_patient_timeline(
+    phone: str,
+    db: Session = Depends(get_db),
+    _: str = Depends(verify_api_key),
+) -> dict:
+    """GET /api/patients/{phone}/timeline — all episodes + dosage history."""
+    patient = PatientHistoryService.get_patient_by_phone(db, phone)
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {phone}")
+
+    episodes = PatientHistoryService.get_full_timeline(db, patient.id)
+    return {
+        "patient_id": str(patient.id),
+        "phone": phone,
+        "episode_count": len(episodes),
+        "episodes": episodes,
+    }
+
+
+@app.get(
+    "/api/patients/{phone}/timeline/{inn}",
+    tags=["Patient History Graph"],
+    summary="Single-drug longitudinal history",
+    description=(
+        "Returns all episodes and dosage history for a single drug (by INN) for the patient. "
+        "Useful for tracking dosage escalation, gaps, and treatment restarts over time."
+    ),
+)
+def get_drug_timeline(
+    phone: str,
+    inn: str,
+    db: Session = Depends(get_db),
+    _: str = Depends(verify_api_key),
+) -> dict:
+    """GET /api/patients/{phone}/timeline/{inn} — single drug history."""
+    patient = PatientHistoryService.get_patient_by_phone(db, phone)
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {phone}")
+
+    return PatientHistoryService.get_drug_timeline(db, patient.id, inn)
+
+
+@app.get(
+    "/api/patients/{phone}/conditions",
+    tags=["Patient History Graph"],
+    summary="Inferred conditions list",
+    description=(
+        "Returns all inferred conditions for the patient sorted by confidence DESC. "
+        "Includes status (probable/confirmed/rejected/resolved), confidence score, "
+        "and the inference basis (which drugs triggered each inference)."
+    ),
+)
+def get_patient_conditions(
+    phone: str,
+    db: Session = Depends(get_db),
+    _: str = Depends(verify_api_key),
+) -> dict:
+    """GET /api/patients/{phone}/conditions — all inferred conditions."""
+    patient = PatientHistoryService.get_patient_by_phone(db, phone)
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {phone}")
+
+    conditions = PatientHistoryService.get_conditions(db, patient.id)
+    return {
+        "patient_id": str(patient.id),
+        "phone": phone,
+        "condition_count": len(conditions),
+        "conditions": conditions,
+    }
+
+
+@app.post(
+    "/api/patients/{phone}/conditions/{condition_code}/review",
+    tags=["Patient History Graph"],
+    summary="Clinician condition review",
+    description=(
+        "Allows a clinician to confirm, reject, or resolve an inferred condition. "
+        "Confirmed conditions are never overwritten by future inference runs. "
+        "Rejected conditions are skipped in future inference passes and feed future signal calibration. "
+        "Resolved conditions close the current episode and allow recurrence tracking."
+    ),
+)
+def review_condition(
+    phone: str,
+    condition_code: str,
+    body: ConditionReviewInput,
+    db: Session = Depends(get_db),
+    _: str = Depends(verify_api_key),
+) -> dict:
+    """POST /api/patients/{phone}/conditions/{code}/review — clinician review."""
+    patient = PatientHistoryService.get_patient_by_phone(db, phone)
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {phone}")
+
+    condition = PatientHistoryService.get_condition_by_code(
+        db, patient.id, condition_code
+    )
+    if not condition:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Active condition {condition_code} not found for patient {phone}",
+        )
+
+    from datetime import datetime
+
+    if body.action == "confirm":
+        condition.status = "confirmed"
+        event_type = CONDITION_CONFIRMED
+        payload = {"condition_code": condition_code, "condition_id": str(condition.id)}
+
+    elif body.action == "reject":
+        if not body.rejection_reason:
+            raise HTTPException(
+                status_code=422,
+                detail="rejection_reason is required when action='reject'",
+            )
+        condition.status = "rejected"
+        condition.rejection_reason = body.rejection_reason
+        event_type = CONDITION_REJECTED
+        payload = {
+            "condition_code": condition_code,
+            "condition_id": str(condition.id),
+            "rejection_reason": body.rejection_reason,
+        }
+
+    elif body.action == "resolve":
+        condition.status = "resolved"
+        condition.resolved_at = datetime.utcnow()
+        condition.resolution_reason = body.resolution_reason
+        event_type = CONDITION_RESOLVED
+        payload = {
+            "condition_code": condition_code,
+            "condition_id": str(condition.id),
+            "resolution_reason": body.resolution_reason,
+        }
+    else:
+        raise HTTPException(status_code=422, detail=f"Unknown action: {body.action}")
+
+    condition.reviewed_at = datetime.utcnow()
+    EventStore.emit(
+        db, event_type,
+        patient_id=patient.id,
+        condition_id=condition.id,
+        payload=payload,
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "condition_code": condition_code,
+        "new_status": condition.status,
+        "condition_id": str(condition.id),
+    }
+
+
+@app.post(
+    "/api/patients/{phone}/reactions",
+    tags=["Patient History Graph"],
+    summary="Record drug reaction / allergy",
+    description=(
+        "Records an allergy, intolerance, or adverse drug reaction for a patient. "
+        "Cross-reactive INNs are stored alongside the primary drug INN. "
+        "This data is used by the DDI checker to flag contraindicated prescriptions."
+    ),
+    status_code=201,
+)
+def record_drug_reaction(
+    phone: str,
+    body: RecordAllergyInput,
+    db: Session = Depends(get_db),
+    _: str = Depends(verify_api_key),
+) -> dict:
+    """POST /api/patients/{phone}/reactions — record allergy or ADR."""
+    patient = PatientHistoryService.get_patient_by_phone(db, phone)
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {phone}")
+
+    reaction = PatientDrugReaction(
+        patient_id=patient.id,
+        reaction_type=body.reaction_type,
+        inn=body.inn.lower().strip(),
+        cross_reactive_inns=[i.lower().strip() for i in body.cross_reactive_inns],
+        severity=body.severity,
+        manifestation=body.manifestation,
+        source="clinician_entered",
+        notes=body.notes,
+        is_active=True,
+    )
+    db.add(reaction)
+
+    EventStore.emit(
+        db, ALLERGY_RECORDED,
+        patient_id=patient.id,
+        payload={
+            "inn": reaction.inn,
+            "reaction_type": body.reaction_type,
+            "severity": body.severity,
+            "cross_reactive_inns": reaction.cross_reactive_inns,
+        },
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "reaction_id": str(reaction.id),
+        "inn": reaction.inn,
+        "severity": body.severity,
+    }

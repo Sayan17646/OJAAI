@@ -10,25 +10,14 @@ import pytest
 from PIL import Image
 import io
 
-# Setup mock database first to avoid import-time database errors
-db_mock = MagicMock()
-sys.modules['src.database'] = db_mock
-
 # Mock deep learning libraries so tests can run without them installed
 sys.modules['torch'] = MagicMock()
 sys.modules['transformers'] = MagicMock()
 
-import src.database as db
-db.SessionLocal = MagicMock()
-db.get_or_create_patient = MagicMock()
-db.get_active_medications = MagicMock(return_value=[])
-db.save_prescription_to_db = MagicMock()
-db.save_to_review_queue = MagicMock()
-
 import torch  # import mocked torch for testing context
 
 from src import ner_ml
-from src.pipeline import _extract_with_ner_fallback, process_prescription
+from src.pipeline import _extract_with_ner_fallback
 
 
 def test_clean_donut_json():

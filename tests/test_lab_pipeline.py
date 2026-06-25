@@ -127,7 +127,15 @@ def test_metformin_elevated_creatinine_contraindication():
     finally:
         # Clean up database
         db.rollback()
-        from src.database import LabResult, LabReport, Patient, ReviewQueue
+        from src.database import (
+            LabResult, LabReport, Patient, ReviewQueue,
+            PhgEvent, PatientCondition, MedicationDosageHistory, MedicationEpisode, Doctor
+        )
+        db.query(PhgEvent).delete()
+        db.query(PatientCondition).delete()
+        db.query(MedicationDosageHistory).delete()
+        db.query(MedicationEpisode).delete()
+        db.query(Doctor).delete()
         db.query(LabResult).delete()
         db.query(LabReport).delete()
         db.query(ReviewQueue).delete()
@@ -178,7 +186,15 @@ def test_levothyroxine_out_of_range_tsh_alerts():
         
     finally:
         db.rollback()
-        from src.database import LabResult, LabReport, Patient, ReviewQueue
+        from src.database import (
+            LabResult, LabReport, Patient, ReviewQueue,
+            PhgEvent, PatientCondition, MedicationDosageHistory, MedicationEpisode, Doctor
+        )
+        db.query(PhgEvent).delete()
+        db.query(PatientCondition).delete()
+        db.query(MedicationDosageHistory).delete()
+        db.query(MedicationEpisode).delete()
+        db.query(Doctor).delete()
         db.query(LabResult).delete()
         db.query(LabReport).delete()
         db.query(ReviewQueue).delete()
@@ -240,9 +256,17 @@ class TestLabApiEndpoints:
         assert result["results"][0]["flag"] == "high"
         
         # Clean up database writes
-        from src.database import SessionLocal, LabResult, LabReport, Patient, ReviewQueue
+        from src.database import (
+            SessionLocal, LabResult, LabReport, Patient, ReviewQueue,
+            PhgEvent, PatientCondition, MedicationDosageHistory, MedicationEpisode, Doctor
+        )
         db = SessionLocal()
         try:
+            db.query(PhgEvent).delete()
+            db.query(PatientCondition).delete()
+            db.query(MedicationDosageHistory).delete()
+            db.query(MedicationEpisode).delete()
+            db.query(Doctor).delete()
             db.query(LabResult).delete()
             db.query(LabReport).delete()
             db.query(ReviewQueue).delete()
@@ -350,6 +374,14 @@ class TestLabApiEndpoints:
             
         finally:
             db.rollback()
+            from src.database import (
+                PhgEvent, PatientCondition, MedicationDosageHistory, MedicationEpisode, Doctor
+            )
+            db.query(PhgEvent).delete()
+            db.query(PatientCondition).delete()
+            db.query(MedicationDosageHistory).delete()
+            db.query(MedicationEpisode).delete()
+            db.query(Doctor).delete()
             db.query(LabResult).delete()
             db.query(LabReport).delete()
             db.query(ReviewQueue).delete()

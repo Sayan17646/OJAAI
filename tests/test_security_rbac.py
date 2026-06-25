@@ -12,7 +12,8 @@ from src.api import app, sign_session, SECRET_KEY
 from src.database import (
     SessionLocal, Clinician, Facility, ReviewQueue, AuditLog, Patient,
     Medication, DrugInteractionRecord, Prescription, LabResult, LabReport,
-    save_to_review_queue, hash_password
+    save_to_review_queue, hash_password,
+    Doctor, MedicationEpisode, MedicationDosageHistory, PatientCondition, PhgEvent
 )
 from src.models import (
     ClinicianLoginInput, ResolvePrescriptionInput, ResolveMedicationInput,
@@ -34,6 +35,11 @@ def setup_rbac_data(db_session: Session):
     # Clean up any existing data first to prevent unique constraint failures
     db_session.query(AuditLog).delete()
     db_session.query(ReviewQueue).delete()
+    db_session.query(PhgEvent).delete()
+    db_session.query(PatientCondition).delete()
+    db_session.query(MedicationDosageHistory).delete()
+    db_session.query(MedicationEpisode).delete()
+    db_session.query(Doctor).delete()
     db_session.query(Medication).delete()
     db_session.query(DrugInteractionRecord).delete()
     db_session.query(Prescription).delete()
